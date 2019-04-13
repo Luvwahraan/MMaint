@@ -217,14 +217,43 @@ sub exit_dialog()
 exit(0) if $return;
 }
 
+sub listMotorcycleOperations {
+  my $motorcycle = shift;
+  my $immat = '';
+  $immat = ' '.$motorcycle->{registration} if (defined $motorcycle->{registration});
+  print "Listes des entretiens pour ".getMotorcycleName($selectedMotorcycle)." :\n";
+
+  state @keys = qw/date mileage type comment/;
+  printf(" %-4s  %-12s%-8s%-30s%-45s\n",' ' , @keys);
+  for (my $i = 0; $i < scalar @{$motorcycle->{operation}}; $i++) {
+    printf("[%4d] %-12s%-8d%-30s%-45s\n",$i, $motorcycle->{operation}->[$i]->@{@keys});
+  }
+}
+
 my $motoMenu;
 foreach my $moto(@{$DBHandler->{motorcycles}}) {
-    push(@$motoMenu, {-label => $moto->{name}, -value => $moto} );
+  my @values;
+  my $labels;
+  state @keys = qw/date mileage type comment/;
+
+  foreach my $ope(@{$moto->{operation}}) {
+    push(@values, $ope->{id});
+    $labels->{$ope->{id}} = sprintf("%-12s%-8d%-30s%-45s\n", $moto->{operation}->@{@keys});
+  }
+
+  my $immat = ''; $immat = " [$moto->{registration}]" if (defined $moto->{registration});
+  push(@$motoMenu, {-label => "$moto->{name}$immat", -value => $moto} );
 };
+
 
 my $menu = $cui->add(
     'menu', 'Menubar', -menu => [
       {-label => 'Moto', -submenu => $motoMenu},
+      {-label => 'Stock', -submenu => [
+          {-label => "Ajout", -value => ''},
+          {-label => "Liste", -value => ''},
+        ]},
+      {-label => 'Quitter', -submenu => \&exit_dialog},
     ]
   );
 

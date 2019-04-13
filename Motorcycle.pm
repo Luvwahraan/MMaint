@@ -15,8 +15,8 @@ sub new {
 
   $self->{id} = shift;
   $self->{constructor} = shift;
-  $self->{name} = shift;
-  $self->{ref} = shift; # Nom commercial. Ex: CB750 Sevenfifty
+  $self->{name} = shift; # Nom commercial. Ex: CB750 Sevenfifty
+  $self->{ref} = shift; # type mine
   $self->{registration} = shift; # Immatriculation
   $self->{mileage} = shift; # kilométrage
 
@@ -52,7 +52,15 @@ sub getRef {
 
 sub getName {
   my $self = shift;
-  return $self->{name};
+
+  my $immat = '';
+  $immat = ' ['.$self->{registration}.']' if (defined $self->{registration});
+  return "$self->{name}$immat";
+}
+
+sub getFullName {
+  my $self = shift;
+  return join(' ', $self->{constructor}->getName(), $self->{name}, $self->{ref});
 }
 
 sub getConstructor {
