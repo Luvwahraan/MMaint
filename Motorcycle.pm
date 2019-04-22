@@ -50,12 +50,14 @@ sub getRef {
   return $self->{ref};
 }
 
+sub getRegistration {
+  my $self = shift;
+  return $self->{registration};
+}
+
 sub getName {
   my $self = shift;
-
-  my $immat = '';
-  $immat = ' ['.$self->{registration}.']' if (defined $self->{registration});
-  return "$self->{name}$immat";
+  return $self->{name};
 }
 
 sub getFullName {

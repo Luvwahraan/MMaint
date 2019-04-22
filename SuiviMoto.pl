@@ -6,6 +6,8 @@ use warnings;
 
 use DBI;
 use lib '.';
+use Curses::UI;
+
 
 use DBHandler;
 use Constructor;
@@ -17,245 +19,157 @@ use Data::Dumper;
 my $selectedMotorcycle;
 
 my $DBHandler = DBHandler->new('comms', 'sulvul', 'marion', 'R4tonL@veur', '5432');
-#$DBHandler->fetchConstructors();
-#$DBHandler->fetchMotorcycles();
+my $cui = new Curses::UI( -mouse_support => 1, -color_support => 1, -debug => 0);
 
-sub getMotorcycleName {
-  my $motorcycle = shift;
-  my $immat = '';
-  $immat = ' '.$motorcycle->{registration} if (defined $motorcycle->{registration});
-  return "$motorcycle->{name}$immat";
+sub exit_dialog {
+  my $return = $cui->dialog(
+    -message   => "Voulez-vous quitter ?",
+    -title     => "Quitter",
+    -buttons   => ['yes', 'no']
+  );
+  exit(0) if $return;
 }
 
 
-sub printMotorcycleOperations {
-  my $motorcycle = shift;
-  my $immat = '';
-  $immat = ' '.$motorcycle->{registration} if (defined $motorcycle->{registration});
-  print "Listes des entretiens pour ".getMotorcycleName($selectedMotorcycle)." :\n";
+my $window = $cui->add(
+    'win1', 'Window',
+    -border => 0,
+    -y    => 1,
+  );
 
-  state @keys = qw/date mileage type comment/;
-  printf(" %-4s  %-12s%-8s%-30s%-45s\n",' ' , @keys);
-  for (my $i = 0; $i < scalar @{$motorcycle->{operation}}; $i++) {
-    printf("[%4d] %-12s%-8d%-30s%-45s\n",$i, $motorcycle->{operation}->[$i]->@{@keys});
-  }
-}
+my $menu;
+my %motoSub;
+my $motoListMenu;
+my $container;
+my $addOperationValue = sub {};
+my $motoMenu = [];
+my $form;
 
-foreach my $motorcycle (@{$DBHandler->{motorcycles}}) {
-  $DBHandler->fetchOperationByMotorcycle($motorcycle);
-  #print Dumper $motorcycle;
-}
-
-
-sub askTypeOpe {
-  my $input = undef;
-
-  while (!$input) {
-    print "Type d’opération: \n";
-    foreach my $tOpe(keys @{$DBHandler->{typeOperation}}) {
-      printf "[%3d] %-40s", $tOpe, $DBHandler->{typeOperation}[$tOpe]->getName();
-      if ($tOpe % 3 == 0) { print "\n"; }
-
-    }
-    $input = <STDIN>; chop $input;
-    $input = '' if ($input !~ /^\d+$/);
-
-    if ((! $input eq '') and defined($DBHandler->{typeOperation}[$input])) {
-      print "Opération ".$DBHandler->{typeOperation}[$input]->getName()."\n";
-    } else {
-      $input = undef;
-      print "Opération invalide. ";
-    }
-  }
-
-  return $DBHandler->{typeOperation}[$input];
-}
-
-sub askMileage {
-  my $mileage = 0;
-
-  while ($mileage <= 0) {
-    print "Kilométrage: ";
-    $mileage = <STDIN>; chop $mileage;
-    if ($mileage !~ /^\d+$/) {
-      print "Kilométrage invalide. ";
-      $mileage = 0;
-    }
-  }
-
-  return $mileage;
-}
-
-sub askSupply {
-  my $motorcycle = shift;
-  my $input = undef;
-
-  while (!$input) {
-    print "Stock utilisé: \n";
-
-    my $supply = $DBHandler->fetchUnusedSupplies();
-    my @keys = qw/date description quantity/;
-    printf("%-13s %-60s %-12s\n", @keys, "total");
-    foreach my $s(@{$supply}) {
-      printf("%-13s %-60s %12d\n", $s->@{@keys});
-    }
-
-    foreach my $tOpe(keys @{$DBHandler->{typeOperation}}) {
-      printf "[%3d] %-40s", $tOpe, $DBHandler->{typeOperation}[$tOpe]->getName();
-      if ($tOpe % 3 == 0) { print "\n"; }
-
-    }
-    $input = <STDIN>; chop $input;
-    $input = '' if ($input !~ /^\d+$/);
-
-    if ((! $input eq '') and defined($DBHandler->{typeOperation}[$input])) {
-      print "Opération ".$DBHandler->{typeOperation}[$input]->getName()."\n";
-    } else {
-      $input = undef;
-      print "Opération invalide. ";
-    }
-  }
-
-  return $DBHandler->{typeOperation}[$input];
-}
-
-sub addOperation {
-  print "Adding operation\n";
-  my $motorcycle = shift;
-
-  my $typeOperation = askTypeOpe();
-  print Dumper $typeOperation;
-  print "Commentaire: "; my $comment = <STDIN>; chop $comment;
-  #my @stock = askSupply($motorcycle);
-  my $mileage = askMileage($motorcycle);
-
-  my $operation = new Operation(undef,$motorcycle,undef,$typeOperation,$comment,$mileage);
-  $DBHandler->addOperation($operation);
-}
-
-sub addSupply {
-  my $seller = '';
-  my $description = '';
-  my $price = 0;
-  my $quantity = '';
-
-  print "Vendeur: ";
-  $seller = <STDIN>; chop $seller;
-
-  while ($description eq '') {
-    print "Description: ";
-    $description = <STDIN>; chop $description;
-  }
-
-  while ($price == 0) {
-    print "Prix: ";
-    my $p = <STDIN>; chop $p;
-    $price = sprintf("%.2f", $p);
-    $price = 0 if ($price < 0);
-  }
-
-  while ($quantity !~ /^\d+$/) {
-    print "Quantity: ";
-    my $p = <STDIN>; chop $p;
-    $quantity = sprintf("%d", $p);
-  }
-
-  my $newSupply = new Supply(undef, undef, $seller, $description, $price, $quantity);
-  $DBHandler->addSupply($newSupply);
-}
-
-sub listOperations {
-  my $opeNb = shift;
-  print "List operation $opeNb\n";
-
-}
-
-sub listSupply {
-  my $supply = $DBHandler->fetchUnusedSupplies();
-  my @keys = qw/date seller description price quantity/;
-  printf("%-13s %-25s %-60s %-13s %-12s %-13s\n", @keys, "total");
-  foreach my $s(@{$supply}) {
-    printf("%-13s %-25s %-60s %-10.2f %12d %10.2f\n", $s->@{@keys}, ($s->{price}*$s->{quantity}));
-  }
+sub addMenu {
+  $menu = $cui->add(
+      'menu', 'Menubar', -menu => [
+        {-label => 'Choix moto', -submenu => $motoListMenu},
+        {-label => 'Moto', -submenu => $motoMenu},
+        {-label => 'Stock', -submenu => [
+            {-label => "Ajout", -value => ''},
+            {-label => "Liste", -value => ''},
+          ]},
+        {-label => 'Quitter ^Q', -submenu => \&exit_dialog},
+      ]
+    );
 }
 
 
-
-sub getMotorcycleNb {
-  print  "Motocyclettes dans la base de données :\n";
-  my $m = "";
-  my $nb = -1;
-
-  foreach ($DBHandler->getMotorcyclesName()) {
-    $nb++;
-    print "[$nb] $_\n";
-  }
-
-  while ($m !~ /\d+/ or $m < 0 or $m > $nb) {
-    print "Choisissez une moto : ";
-    $m = <STDIN>;
-    $m = 1 if ($m eq "\n");
-    print "Moto invalide. " if ($m < 0 or $m > $nb or $m !~ /\d+/);
-  }
-
-  return $m;
-}
-
-
-use Curses::UI;
-my $cui = new Curses::UI( -mouse_support => 1, -color_support => 1 );
-
-sub exit_dialog()
-{
-        my $return = $cui->dialog(
-                -message   => "Do you really want to quit?",
-                -title     => "Are you sure???",
-                -buttons   => ['yes', 'no'],
-
-        );
-
-exit(0) if $return;
-}
-
-sub listMotorcycleOperations {
-  my $motorcycle = shift;
-  my $immat = '';
-  $immat = ' '.$motorcycle->{registration} if (defined $motorcycle->{registration});
-  print "Listes des entretiens pour ".getMotorcycleName($selectedMotorcycle)." :\n";
-
-  state @keys = qw/date mileage type comment/;
-  printf(" %-4s  %-12s%-8s%-30s%-45s\n",' ' , @keys);
-  for (my $i = 0; $i < scalar @{$motorcycle->{operation}}; $i++) {
-    printf("[%4d] %-12s%-8d%-30s%-45s\n",$i, $motorcycle->{operation}->[$i]->@{@keys});
-  }
-}
-
-my $motoMenu;
+# listing moto, creating submenu foreach.
 foreach my $moto(@{$DBHandler->{motorcycles}}) {
-  my @values;
-  my $labels;
-  state @keys = qw/date mileage type comment/;
 
-  foreach my $ope(@{$moto->{operation}}) {
-    push(@values, $ope->{id});
-    $labels->{$ope->{id}} = sprintf("%-12s%-8d%-30s%-45s\n", $moto->{operation}->@{@keys});
-  }
+  $motoSub{$moto->{id}}{motoMenu} = sub {
+    my @values;
+    my $labelsList;
+    # list operations types
+    foreach my $type( @{$DBHandler->{typeOperation}} ) {
+      $labelsList->{$type->getId()} = $type->getName();
+      push( @values, $type->getId());
+    }
+
+    my $opeType;
+    my $comment;
+    my $mileage;
+    my $nextForm;
+
+    my $typeOpeSub = {
+      # Removing operations type
+      $window->delete('container') if $container;
+
+      $container = $window->add(
+          'container', 'Listbox',
+          -values     => \@values,
+          -labels     => $labelsList,
+          -title      => 'Choix type opérations',
+          -height     => 45,
+          -border     => 1,
+          -onchange   => $nextForm,
+        );
+    };
+
+    my $commentSub = sub {
+      $opeType = $container->get();
+      $window->delete('container') if $container;
+
+      $window->add(
+          'container', 'TextViewer',
+          -border          => 1,
+          -padtop          => 0,
+          -padbottom       => 3,
+          -hscrollbar      => 1,
+          -singleline      => 1
+          -text            => 'nothing insrtaienrstaie t',
+          -columnScroll    => 0,
+          -addBlankColumns => 1,
+          #~ -fieldSeparator  => "*",
+        );
+    };
+
+    my $mileageSub = sub {
+    };
+    #~ $container->focus();
+
+
+  };
+
+  $motoSub{$moto->{id}}{listMenu} = sub {
+    my $moto = shift;
+    #$cui->status($moto->getFullName());
+
+    $DBHandler->fetchOperationByMotorcycle($moto);
+
+    my @values;
+    my $labelsList;
+    foreach my $operation( @{$moto->{operation}}) {
+      my $id = $operation->getId();
+      my $date = $operation->getDate();
+      my $mileage = $operation->getMileage();
+      my $type = $operation->getType();
+      my $comment = $operation->getComment();
+      #$labelsList->{$operation->getId()} = join (' ', $operation->{date}, $operation->mileage,$operation->{type},$operation->{comment});
+      $labelsList->{$operation->getId()} = sprintf("%-6d %-12s %-8d %-30s %-45s" ,$id, $date, $mileage, $type, $comment);
+      push( @values, $operation->getId());
+    }
+
+    # Remplacing menu
+    $cui->delete('menu');
+    $motoMenu = [{-label => 'Ajout entretien', -value => $motoSub{$moto->{id}}{motoMenu} }];
+    #$addOperationValue = $motoSub{$moto->{id}}->{motoMenu};
+    addMenu();
+
+    # Listing operations
+    $window->delete('container') if $container;
+    $container = $window->add(
+        'container', 'Listbox',
+        -values     => \@values,
+        -labels     => $labelsList,
+        -title      => sprintf("%-6s %-12s %-8s %-30s %-45s", qw/id date mileage type comment/),
+        -height     => 45, -border => 1,
+      );
+    $container->focus();
+  };
 
   my $immat = ''; $immat = " [$moto->{registration}]" if (defined $moto->{registration});
-  push(@$motoMenu, {-label => "$moto->{name}$immat", -value => $moto} );
+  push(@$motoListMenu, {-label => $moto->getName().$immat, -value => sub {$motoSub{$moto->{id}}{listMenu}->($moto)}} );
 };
 
-
-my $menu = $cui->add(
-    'menu', 'Menubar', -menu => [
-      {-label => 'Moto', -submenu => $motoMenu},
-      {-label => 'Stock', -submenu => [
-          {-label => "Ajout", -value => ''},
-          {-label => "Liste", -value => ''},
-        ]},
-      {-label => 'Quitter', -submenu => \&exit_dialog},
-    ]
-  );
+#~ $menu = $cui->add(
+    #~ 'menu', 'Menubar', -menu => [
+      #~ {-label => 'Choix moto', -submenu => $motoListMenu},
+      #~ {-label => 'Moto', -submenu => $motoMenu},
+      #~ {-label => 'Stock', -submenu => [
+          #~ {-label => "Ajout", -value => ''},
+          #~ {-label => "Liste", -value => ''},
+        #~ ]},
+      #~ {-label => 'Quitter ^Q', -submenu => \&exit_dialog},
+    #~ ]
+  #~ );
+addMenu();
 
 $cui->set_binding(sub {$menu->focus()}, "\cX");
 $cui->set_binding( \&exit_dialog , "\cQ");
@@ -264,51 +178,6 @@ $menu->focus();
 $cui->mainloop();
 
 __END__
-
-
-my $motorcycleNb = getMotorcycleNb();
-$selectedMotorcycle = $DBHandler->{motorcycles}->[$motorcycleNb];
-printMotorcycleOperations($selectedMotorcycle);
-
-use Switch;
-
-while (1) {
-  print "\n";
-  my $c; my $valid = 0;
-  while ($valid == 0) {
-    print "Ajout entretien:a";
-    print "\tAjout stock:s";
-    print "\tListe stock:l";
-    print "\tListe matériel opération:o";
-    print "\n";
-    $c = <STDIN>;
-    if ($c =~ /^([aslo])( ?\d+)?/) {
-      switch($1) {
-        case 'a' { addOperation($selectedMotorcycle); $valid++; }
-        case 's' { addSupply(); $valid++; }
-        case 'l' { listSupply(); $valid++; }
-        case 'o' { if (defined $2) { listOperations($2); $valid++; } }
-      }
-    }
-  }
-}
-
-__END__
-print Dumper $DBHandler->{motorcycles}[$nb];
-
-# 2 - Choix de l'utilisateur
-my $term = Term::ReadLine->new('Motorcycle> ');
-$selectedMotorcycle = $term->get_reply(
-  print_me =>,
-  prompt   => 'Choisissez une moto : ',
-  choices  =>
-  #default  => 'PICARDIE',
-);
-
-print Dumper $DBHandler;
-foreach my $obj ($DBHandler->getMotorcycles()) {
-  $DBHandler->fetchOperationByMotorcycle(\$obj);
-}
 
 
 

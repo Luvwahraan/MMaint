@@ -33,12 +33,17 @@ sub getMotorcycle {
 
 sub getDate {
   my $self = shift;
-  return $self->{Date};
+  return $self->{date};
 }
 
 sub getComment {
   my $self = shift;
   return $self->{comment};
+}
+
+sub getType {
+  my $self = shift;
+  return $self->{type};
 }
 
 sub getMileage {

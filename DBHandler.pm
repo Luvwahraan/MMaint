@@ -12,6 +12,8 @@ use Motorcycle;
 use Supply;
 use TypeOperation;
 
+use Data::Dumper;
+
 my $bd    = 'comms';
 my $serveur = 'sulvul';
 my $identifiant = 'marion';
@@ -27,6 +29,9 @@ sub new {
   my $identifiant = shift;
   my $motdepasse  = shift;
   my $port  = shift;
+  $self->{debug} = shift || 0;
+
+  print "Creating DB handler.\n" if $self->{debug};
 
   # Connection à la base de données.
   $self->{dbh} = DBI->connect( "DBI:Pg:database=$bd;host=$serveur;port=$port", $identifiant, $motdepasse, {RaiseError => 1}) ;
@@ -47,7 +52,9 @@ sub addOperation {
   my $self = shift;
   my $operation = shift;
 
-  my $id_oper = $operation->{motorcycle}->getId();
+  print "Adding operation.\n" if $self->{debug};
+
+  my $id_moto = $operation->{motorcycle}->getId();
   my $comment = $operation->{comment};
   my $mileage = $operation->{mileage};
   my $id_type = $operation->{type}->getId();
@@ -55,7 +62,7 @@ sub addOperation {
   my $sql = <<EOF;
 WITH rows AS (
     INSERT INTO operation (id_motorcycle,comment,mileage)
-    VALUES ($id_oper, '$comment', $mileage)
+    VALUES ($id_moto, '$comment', $mileage)
     RETURNING $id_type, id_oper
 )
 INSERT INTO oper_type (id_type,id_oper)
@@ -70,6 +77,8 @@ EOF
 sub addSupply {
   my $self = shift;
   my $supply = shift;
+
+  print "Adding supply.\n" if $self->{debug};
 
   my $c = 'seller,description,price,quantity';
   my @col = split(',', $c);
@@ -87,16 +96,21 @@ sub addSupply {
 
 sub checkView {
   my $self = shift;
-  my $viewName = shift;
+  my $viewName = lc shift;
+
+  print "Checking if $viewName exists.\n" if $self->{debug};
 
   my $prep = $self->{dbh}->prepare("select viewname from pg_catalog.pg_views where schemaname NOT IN ('pg_catalog', 'information_schema');");
   $prep->execute();
 
   while (my $v = $prep->fetchrow_array()) {
+    $v = lc $v;
     if ("$v" eq "$viewName") {
+      print "\t$viewName exists\n" if $self->{debug};
       return 1;
     }
   }
+  print "\t$viewName doesn't exits.\n" if $self->{debug};
   return 0;
 }
 
@@ -106,13 +120,15 @@ sub fetchOperationByMotorcycle {
   my $name = $motorcycle->getName();
   my $lastOpeMileage = 0;
 
+  print "Fetching operations for motorcycle ".$motorcycle->getFullName()."\n" if $self->{debug};
+
   my $operationsPrep;
-  $operationsPrep = $self->{dbh}->prepare("SELECT * FROM $name ORDER BY id_oper ASC;");
+  $operationsPrep = $self->{dbh}->prepare("SELECT * FROM $name;");
   $operationsPrep->execute();
 
   my $operation;
   while (my ($id_oper,$id_motorcycle,$date,$type,$comment,$mileage) = $operationsPrep->fetchrow_array()) {
-    my $operation = Operation->new($id_oper,$id_motorcycle,$date,$type,$comment,$mileage);
+    $operation = Operation->new($id_oper,$id_motorcycle,$date,$type,$comment,$mileage);
     $motorcycle->addOperation($operation);
   }
   $motorcycle->setLastOperation($operation);
@@ -169,7 +185,8 @@ sub makeView {
   my $sql = shift;
   my $prep;
 
-  if ($self->checkView($viewName) == 1) {
+  unless ($self->checkView($viewName)) {
+    print "Making view '$viewName'\n" if $self->{debug};
     $prep = $self->{dbh}->prepare($sql);
     $prep->execute();
   }
@@ -179,18 +196,21 @@ sub fetchMotorcycles {
   my $self = shift;
   my $prep;
   my $operationView = '';
+  print "Fetching motorcycles.\n" if $self->{debug};
+
   $prep = $self->{dbh}->prepare("SELECT id_motorcycle,id_constructor,name,ref,registration,mileage FROM motorcycle;");
   $prep->execute();
   while (my ($id_motorcycle,$id_constructor,$name,$ref,$registration,$mileage) =  $prep->fetchrow_array()) {
+    $name = lc $name;
     $operationView = <<EOF;
 CREATE VIEW $name AS
-SELECT operation.id_oper, operation.id_motorcycle, operation.date, type_operation.name AS type,
-    operation.comment, operation.mileage
-  FROM operation,type_operation,oper_type
-  WHERE oper_type.id_type = type_operation.id_type
-    AND oper_type.id_oper = operation.id_oper
-    AND operation.id_motorcycle = $id_motorcycle
-  ORDER BY operation.date;
+  SELECT  oper_type.id_oper, operation.id_motorcycle, operation.date,
+          type_operation.name AS type, operation.comment, operation.mileage
+  FROM oper_type
+    INNER JOIN type_operation ON type_operation.id_type = oper_type.id_type
+    INNER JOIN operation ON operation.id_oper = oper_type.id_oper
+  WHERE operation.id_motorcycle = $id_motorcycle
+    ORDER BY operation.date ;
 
 EOF
     $self->makeView($name,$operationView);
@@ -219,6 +239,7 @@ sub searchConstructorByName {
 sub fetchConstructors {
   my $self = shift;
   my $prep;
+  print "Fetching constructors.\n" if $self->{debug};
   $prep = $self->{dbh}->prepare("SELECT id_constructor, name FROM constructor;");
   $prep->execute();
   while (my @row =  $prep->fetchrow_array()) {
